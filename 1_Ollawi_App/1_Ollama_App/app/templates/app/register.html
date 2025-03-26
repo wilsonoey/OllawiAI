@@ -1,0 +1,129 @@
+{% extends "app/layout.html" %}
+
+{% block content %}
+
+<h2>{{ title }}</h2>
+<div class="row">
+    <div class="col-md-8">
+        <section id="registerForm">
+            <form action="." method="post" class="form-horizontal">
+                {% csrf_token %}
+                <h4>Create a new account.</h4>
+                <hr />
+                <div class="form-group
+                        {% if form.username.errors %}has-error{% endif %}">
+                        <label for="id_username" class="col-md-2 control-label">Username</label>
+                        <div class="col-md-10">
+                            <input type="text" name="username" id="id_username" class="form-control" value="{{ form.username.value|default:'' }}">
+                            {% if form.username.errors %}
+                            <span class="help-block
+                                    {% if form.username.errors %}has-error{% endif %}">
+                                    {{ form.username.errors }}
+                            </span>
+                            {% endif %}
+                        </div>
+                </div>
+                <div class="form-group
+                        {% if form.email.errors %}has-error{% endif %}">
+                        <label for="id_email" class="col-md-2 control-label">Email</label>
+                        <div class="col-md-10">
+                            <input type="email" name="email" id="id_email" class="form-control" value="{{ form.email.value|default:'' }}">
+                            {% if form.email.errors %}
+                            <span class="help-block
+                                    {% if form.email.errors %}has-error{% endif %}">
+                                    {{ form.email.errors }}
+                            </span>
+                            {% endif %}
+                        </div>
+                </div>
+                <div class="form-group
+                        {% if form.password1.errors %}has-error{% endif %}">
+                        <label for="id_password1" class="col-md-2 control-label">Password</label>
+                        <div class="col-md-10">
+                            <input type="password" name="password1" id="id_password1" class="form-control">
+                            {% if form.password1.errors %}
+                            <span class="help-block
+                                    {% if form.password1.errors %}has-error{% endif %}">
+                                    {{ form.password1.errors }}
+                            </span>
+                            {% endif %}
+                        </div>
+                </div>
+                <div class="form-group
+                        {% if form.errors %}has-error{% endif %}">
+                        <div class="col-md-offset-2 col-md-10">
+                            <input type="submit" value="Register" class="btn btn-default" />
+                        </div>
+                </div>
+                {% if form.errors %}
+                <p class="validation
+                        {% if form.errors %}has-error{% endif %}">
+                        Please correct the errors above.
+                </p>
+                <div class="error-details">
+                    <p>Form errors details:</p>
+                    <pre>{{ form.errors }}</pre>
+                </div>
+                {% endif %}
+            </form>
+        </section>
+    </div>
+    <div class="col-md-4">
+        <section id="socialLoginForm"></section>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const username = document.getElementById('id_username').value;
+            const email = document.getElementById('id_email').value;
+            const password1 = document.getElementById('id_password1').value;
+            
+            let hasError = false;
+            
+            // Reset previous errors
+            document.querySelectorAll('.form-group').forEach(group => {
+                group.classList.remove('has-error');
+                const errorSpan = group.querySelector('.validation-message');
+                if (errorSpan) errorSpan.remove();
+            });
+            
+            // Check each field
+            if (!username) {
+                markFieldWithError('id_username', 'Username is required');
+                hasError = true;
+            }
+            
+            if (!email) {
+                markFieldWithError('id_email', 'Email is required');
+                hasError = true;
+            }
+            
+            if (!password1) {
+                markFieldWithError('id_password1', 'Password is required');
+                hasError = true;
+            }
+            
+            if (hasError) {
+                e.preventDefault();
+            }
+        });
+        
+        function markFieldWithError(fieldId, message) {
+            const field = document.getElementById(fieldId);
+            const formGroup = field.closest('.form-group');
+            formGroup.classList.add('has-error');
+            
+            const errorSpan = document.createElement('span');
+            errorSpan.className = 'help-block validation-message';
+            errorSpan.textContent = message;
+            
+            field.parentNode.appendChild(errorSpan);
+        }
+    });
+</script>
+
+{% endblock %}
+
+{% load static %}

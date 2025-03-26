@@ -1,0 +1,1257 @@
+{% extends "app/layout.html" %}
+
+{% block content %}
+<div class="chatgpt-layout">
+    <!-- Chat history sidebar -->
+    <div class="chat-sidebar">
+        <div class="sidebar-header">
+            <button class="new-chat-button" onclick="window.location.href='/'">
+                <i class="glyphicon glyphicon-plus-sign"></i> New Chat
+            </button>
+        </div>
+        <div class="chat-history" id="chat-history">
+            <!-- Chat history will be loaded here -->
+            <div class="loading-history">Loading chat history...</div>
+        </div>
+    </div>
+
+    <!-- Main chat area -->
+    <div class="chatgpt-landing">
+        <div class="chatgpt-header">
+            <h1 id="chat-title" ondblclick="enableTitleEdit()">Loading chat...</h1>
+            <div id="title-edit-container" style="display: none;">
+                <input type="text" id="title-edit-input" class="form-control">
+                <div class="title-edit-buttons">
+                    <button class="btn btn-sm btn-primary" id="save-title-btn">Save</button>
+                    <button class="btn btn-sm btn-default" id="cancel-title-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chatgpt-content">
+            <div id="chat-messages" class="chat-messages">
+                <div class="loading-history">Loading conversation...</div>
+            </div>
+        </div>
+        
+        <div class="chatgpt-input-container">
+            <form class="chatgpt-form" id="chat-form" onsubmit="return false;">
+                <div class="preset-selector">
+                    <select id="presetSelector" class="form-control">
+                        {% if user_presets %}
+                            {% for preset in user_presets %}
+                                <option value="{{ preset.id }}" {% if preset.id == default_preset.id %}selected{% endif %}>
+                                    {{ preset.call_name|default:preset.model }}
+                                </option>
+                            {% endfor %}
+                        {% else %}
+                            <option value="">No presets available</option>
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="input-box">
+                    <textarea class="chatgpt-input" placeholder="Message..." id="chatInput" rows="1"></textarea>
+                    <button type="button" class="send-button" disabled id="sendButton">
+                        <i class="glyphicon glyphicon-send"></i>
+                    </button>
+                </div>
+                <p class="small text-muted text-center">Your chats are saved automatically</p>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteConfirmationModal" tabindex="-1" role="dialog" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <h4 class="modal-title" id="deleteModalLabel">Confirm Deletion</h4>
+            </div>
+            <div class="modal-body">
+                <p>Apakah anda yakin menghapus chat ini?</p>
+                <p class="text-danger"><small>This action cannot be undone.</small></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* ChatGPT-like layout with sidebar */
+    .chatgpt-layout {
+        display: flex;
+        height: calc(100vh - 100px);
+        width: 100%;
+    }
+    
+    /* Sidebar styles */
+    .chat-sidebar {
+        width: 260px;
+        background-color: #f7f7f8;
+        border-right: 1px solid #e5e5e5;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+    
+    .sidebar-header {
+        padding: 16px;
+        border-bottom: 1px solid #e5e5e5;
+    }
+    
+    .new-chat-button {
+        width: 100%;
+        background-color: #0066cc;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 10px;
+        cursor: pointer;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .new-chat-button:hover {
+        background-color: #0055aa;
+    }
+    
+    .chat-history {
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 8px 0;
+    }
+    
+    .chat-item {
+        padding: 10px 16px;
+        cursor: pointer;
+        border-radius: 4px;
+        margin: 2px 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 14px;
+        color: #343541;
+        position: relative;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .chat-item-text {
+        flex-grow: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .chat-item-actions {
+        display: none;
+        margin-left: 8px;
+    }
+    
+    .chat-item:hover {
+        background-color: #ececf1;
+    }
+    
+    .chat-item:hover .chat-item-actions {
+        display: flex;
+    }
+    
+    .chat-item.active {
+        background-color: #e6f2ff;
+    }
+    
+    .chat-item-action-btn {
+        background: none;
+        border: none;
+        padding: 2px 4px;
+        color: #666;
+        cursor: pointer;
+        opacity: 0.7;
+        font-size: 12px;
+    }
+    
+    .chat-item-action-btn:hover {
+        opacity: 1;
+        color: #ff4d4f;
+    }
+    
+    .chat-item-edit {
+        display: flex;
+        flex-direction: column;
+        padding: 8px;
+    }
+    
+    .chat-item-edit input {
+        margin-bottom: 8px;
+        padding: 4px 8px;
+        border: 1px solid #0066cc;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    
+    .chat-item-edit-buttons {
+        display: flex;
+        gap: 4px;
+    }
+    
+    .chat-item-edit-buttons button {
+        flex: 1;
+        padding: 2px 8px;
+        font-size: 12px;
+        border-radius: 3px;
+    }
+    
+    #title-edit-container {
+        margin: 10px auto;
+        max-width: 600px;
+    }
+    
+    #title-edit-input {
+        margin-bottom: 10px;
+        font-size: 18px;
+        text-align: center;
+    }
+    
+    .title-edit-buttons {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+    }
+    
+    #chat-title {
+        cursor: pointer;
+    }
+    
+    #chat-title:hover {
+        text-decoration: underline;
+    }
+    
+    .loading-history {
+        padding: 16px;
+        text-align: center;
+        color: #666;
+        font-style: italic;
+    }
+
+    .thinking-process h4 {
+        color: #495057;
+        font-size: 14px;
+        margin-top: 0;
+        margin-bottom: 8px;
+    }
+
+    .message-content code {
+        background-color: #f1f3f5;
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: monospace;
+        font-size: 90%;
+    }
+    
+    .message-content pre {
+        background-color: #f1f3f5;
+        padding: 10px;
+        border-radius: 0 0 4px 4px;
+        overflow-x: auto;
+        margin: 0;
+    }
+    
+    .message-content pre code {
+        background-color: transparent;
+        padding: 0;
+        font-size: 13px;
+        white-space: pre;
+        line-height: 1.5;
+        tab-size: 4;
+    }
+    
+    .code-block {
+        margin: 10px 0;
+        border-radius: 4px;
+        overflow: hidden;
+        border: 1px solid #e1e4e8;
+    }
+    
+    .code-header {
+        display: flex;
+        justify-content: space-between;
+        background-color: #f6f8fa;
+        padding: 6px 10px;
+        border-bottom: 1px solid #e1e4e8;
+        font-family: monospace;
+        font-size: 12px;
+    }
+    
+    .code-language {
+        color: #24292e;
+    }
+    
+    .copy-button {
+        background-color: transparent;
+        border: 1px solid #d1d5da;
+        border-radius: 3px;
+        color: #586069;
+        padding: 2px 6px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .copy-button:hover {
+        background-color: #f1f2f3;
+    }
+
+    .message-content h1, .message-content h2, .message-content h3 {
+        margin-top: 15px;
+        margin-bottom: 10px;
+        font-weight: 600;
+    }
+    
+    .message-content h1 {
+        font-size: 24px;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 5px;
+    }
+    
+    .message-content h2 {
+        font-size: 20px;
+    }
+    
+    .message-content h3 {
+        font-size: 16px;
+    }
+    
+    .message-content ul, .message-content ol {
+        margin: 10px 0;
+        padding-left: 20px;
+    }
+    
+    .message-content li {
+        margin-bottom: 5px;
+    }
+    
+    .message-content p {
+        margin: 0;
+        white-space: pre-wrap; /* This preserves line breaks and wraps text */
+    }
+    
+    .message-content strong {
+        font-weight: 600;
+    }
+    
+    .message-content em {
+        font-style: italic;
+    }
+
+    /* ChatGPT-like styling */
+    .chatgpt-landing {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 100px);
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px 0;
+        flex-grow: 1;
+    }
+    
+    .chatgpt-header {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    
+    .chatgpt-content {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        overflow-y: auto;
+    }
+    
+    .chat-messages {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 20px;
+    }
+    
+    .message {
+        display: flex;
+        max-width: 80%;
+    }
+    
+    .user-message {
+        align-self: flex-end;
+        background-color: #007bff;
+        color: white;
+        border-radius: 18px 18px 0 18px;
+        padding: 10px 15px;
+        max-width: 80%; /* Ensure consistent width with assistant messages */
+    }
+    
+    .assistant-message {
+        align-self: flex-start;
+        background-color: #f0f2f5;
+        border-radius: 18px 18px 18px 0;
+        padding: 10px 15px;
+        max-width: 90%;
+    }
+    
+    .message-content p {
+        margin: 0;
+    }
+    
+    .preset-selector {
+        margin-bottom: 10px;
+    }
+    
+    .preset-selector select {
+        width: 100%;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        font-size: 14px;
+    }
+    
+    .chatgpt-input-container {
+        margin-top: auto;
+        padding: 20px 0;
+    }
+    
+    .chatgpt-form {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    
+    .input-box {
+        display: flex;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        overflow: hidden;
+        background-color: #fff;
+    }
+    
+    .chatgpt-input {
+        flex-grow: 1;
+        border: none;
+        padding: 15px;
+        font-size: 16px;
+        background-color: #fff;
+        max-width: none;
+        resize: none;
+        overflow-y: auto;
+        line-height: 1.5;
+        max-height: 200px;
+    }
+    
+    .chatgpt-input:focus {
+        outline: none;
+    }
+    
+    .send-button {
+        background-color: #0066cc;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        cursor: pointer;
+        opacity: 0.7;
+    }
+    
+    .send-button:hover {
+        opacity: 0.9;
+    }
+    
+    .send-button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+    }
+    
+    .loading-dots:after {
+        content: ' .';
+        animation: dots 1.5s steps(5, end) infinite;
+    }
+    
+    @keyframes dots {
+        0%, 20% { content: ' .'; }
+        40% { content: ' ..'; }
+        60% { content: ' ...'; }
+        80%, 100% { content: ''; }
+    }
+    
+    @media (max-width: 768px) {
+        .chatgpt-layout {
+            flex-direction: column;
+        }
+        
+        .chat-sidebar {
+            width: 100%;
+            height: auto;
+            max-height: 200px;
+        }
+    }
+</style>
+
+<script>
+    // Current chat ID
+    const currentChatId = "{{ chat_id }}";
+    
+    // Default preset ID from the selected dropdown value
+    let selectedPresetId = document.getElementById('presetSelector').value;
+
+    // Variables to track quick double-clicks
+    let lastClickTime = 0;
+    let clickTimer = null;
+    let editingChatId = null;
+    
+    // Variable to store chat ID for deletion
+    let chatToDelete = null;
+
+    // Load chat history
+    function loadChatHistory() {
+        fetch('/ollama/chats/')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to load chat history');
+                }
+                return response.json();
+            })
+            .then(data => {
+                const historyContainer = document.getElementById('chat-history');
+                historyContainer.innerHTML = '';
+                
+                if (data.histories && data.histories.length > 0) {
+                    data.histories.forEach(chat => {
+                        const chatItem = document.createElement('div');
+                        chatItem.className = 'chat-item';
+                        if (chat.id_chat === currentChatId) {
+                            chatItem.classList.add('active');
+                        }
+                        
+                        // Create a container for the chat title text
+                        const chatText = document.createElement('div');
+                        chatText.className = 'chat-item-text';
+                        chatText.textContent = chat.title || 'Untitled Chat';
+                        chatItem.appendChild(chatText);
+                        
+                        // Create a container for the action buttons
+                        const actionsContainer = document.createElement('div');
+                        actionsContainer.className = 'chat-item-actions';
+                        
+                        // Create the delete button
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'chat-item-action-btn';
+                        deleteBtn.innerHTML = '<i class="glyphicon glyphicon-trash"></i>';
+                        deleteBtn.title = 'Delete chat';
+                        deleteBtn.onclick = function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            showDeleteConfirmation(chat.id_chat, chat.title);
+                        };
+                        actionsContainer.appendChild(deleteBtn);
+                        
+                        chatItem.appendChild(actionsContainer);
+                        
+                        chatItem.dataset.id = chat.id_chat;
+                        chatItem.dataset.title = chat.title || 'Untitled Chat';
+                        
+                        // Add click event to navigate to chat
+                        chatItem.addEventListener('click', handleChatItemClick);
+                        
+                        // Add double-click handler to edit title
+                        chatItem.addEventListener('dblclick', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            startEditChatTitle(chatItem);
+                        });
+                        
+                        historyContainer.appendChild(chatItem);
+                    });
+                } else {
+                    historyContainer.innerHTML = '<div class="loading-history">No chat history found</div>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('chat-history').innerHTML = 
+                    '<div class="loading-history">Failed to load chat history</div>';
+            });
+    }
+    
+    // Show delete confirmation modal
+    function showDeleteConfirmation(chatId, chatTitle) {
+        // Store the chat ID to delete
+        chatToDelete = chatId;
+        
+        // Update modal title to include chat name
+        document.getElementById('deleteModalLabel').textContent = 'Delete "' + (chatTitle || 'Untitled Chat') + '"';
+        
+        // Show the modal
+        $('#deleteConfirmationModal').modal('show');
+    }
+    
+    // Handle chat deletion
+    function deleteChat(chatId) {
+        fetch(`/ollama/chat/${chatId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to delete chat');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Chat deleted successfully');
+            
+            // If we're on the deleted chat's page, redirect to home
+            if (chatId === currentChatId) {
+                window.location.href = '/';
+            } else {
+                // Otherwise just reload the history
+                loadChatHistory();
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting chat:', error);
+            alert('Failed to delete chat. Please try again.');
+        })
+        .finally(() => {
+            // Close the modal
+            $('#deleteConfirmationModal').modal('hide');
+            // Clear the chatToDelete variable
+            chatToDelete = null;
+        });
+    }
+    
+    // Set up the confirm delete button handler
+    document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+        if (chatToDelete) {
+            deleteChat(chatToDelete);
+        }
+    });
+    
+    // Handle chat item click with support for double-click detection
+    function handleChatItemClick(e) {
+        // If clicking on an action button, don't trigger navigation
+        if (e.target.closest('.chat-item-actions')) {
+            return;
+        }
+        
+        const currentTime = new Date().getTime();
+        const chatItem = e.currentTarget;
+        const chatId = chatItem.dataset.id;
+        
+        // Detect double click (within 300ms)
+        if (currentTime - lastClickTime < 300 && lastClickTime > 0) {
+            // Double click - edit title
+            e.preventDefault();
+            startEditChatTitle(chatItem);
+            clearTimeout(clickTimer);
+            clickTimer = null;
+        } else {
+            // Single click - navigate to chat (with delay to detect potential double click)
+            clickTimer = setTimeout(() => {
+                window.location.href = `/chat/${chatId}`;
+            }, 300);
+        }
+        
+        lastClickTime = currentTime;
+    }
+    
+    // Start editing a chat title in the sidebar
+    function startEditChatTitle(chatItem) {
+        // If already editing another item, cancel that first
+        if (editingChatId) {
+            const editingElement = document.querySelector(`.chat-item[data-id="${editingChatId}"]`);
+            if (editingElement && editingElement.querySelector('input')) {
+                cancelEditChatTitle(editingElement);
+            }
+        }
+        
+        const chatId = chatItem.dataset.id;
+        const originalTitle = chatItem.dataset.title;
+        
+        // Replace content with input field
+        const originalContent = chatItem.innerHTML;
+        chatItem.innerHTML = '';
+        
+        const editContainer = document.createElement('div');
+        editContainer.className = 'chat-item-edit';
+        
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = originalTitle;
+        input.className = 'chat-title-input';
+        
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.className = 'chat-item-edit-buttons';
+        
+        const saveButton = document.createElement('button');
+        saveButton.className = 'btn btn-xs btn-primary';
+        saveButton.textContent = 'Save';
+        saveButton.addEventListener('click', () => saveChatTitle(chatId, input.value, chatItem));
+        
+        const cancelButton = document.createElement('button');
+        cancelButton.className = 'btn btn-xs btn-default';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.addEventListener('click', () => cancelEditChatTitle(chatItem, originalContent));
+        
+        buttonsContainer.appendChild(saveButton);
+        buttonsContainer.appendChild(cancelButton);
+        
+        editContainer.appendChild(input);
+        editContainer.appendChild(buttonsContainer);
+        chatItem.appendChild(editContainer);
+        
+        // Set focus on the input
+        input.focus();
+        input.select();
+        
+        // Add key listener for Enter and Escape
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                saveChatTitle(chatId, input.value, chatItem);
+            } else if (e.key === 'Escape') {
+                cancelEditChatTitle(chatItem, originalContent);
+            }
+        });
+        
+        // Mark this chat as being edited
+        editingChatId = chatId;
+        
+        // Stop events from bubbling to prevent navigation
+        chatItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+        }, { once: true });
+    }
+    
+    // Save the edited chat title
+    function saveChatTitle(chatId, newTitle, chatItem) {
+        // Don't save empty titles
+        if (!newTitle.trim()) {
+            newTitle = 'Untitled Chat';
+        }
+        
+        // Update UI immediately for better UX
+        chatItem.innerHTML = '';
+        
+        // Create text element
+        const chatText = document.createElement('div');
+        chatText.className = 'chat-item-text';
+        chatText.textContent = newTitle;
+        chatItem.appendChild(chatText);
+        
+        // Create actions container
+        const actionsContainer = document.createElement('div');
+        actionsContainer.className = 'chat-item-actions';
+        
+        // Create delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'chat-item-action-btn';
+        deleteBtn.innerHTML = '<i class="glyphicon glyphicon-trash"></i>';
+        deleteBtn.title = 'Delete chat';
+        deleteBtn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            showDeleteConfirmation(chatId, newTitle);
+        };
+        actionsContainer.appendChild(deleteBtn);
+        
+        chatItem.appendChild(actionsContainer);
+        
+        chatItem.dataset.title = newTitle;
+        
+        // If this is the current chat, update the header too
+        if (chatId === currentChatId) {
+            document.getElementById('chat-title').textContent = newTitle;
+            document.title = newTitle + ' - Ollama Chat';
+        }
+        
+        // Send update to server
+        fetch(`/ollama/chat/${chatId}/title`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ title: newTitle })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to update chat title');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Chat title updated successfully');
+        })
+        .catch(error => {
+            console.error('Error updating chat title:', error);
+            // Optionally revert the UI change on error
+        });
+        
+        // Clear editing state
+        editingChatId = null;
+    }
+    
+    // Cancel editing and revert UI
+    function cancelEditChatTitle(chatItem, originalContent) {
+        if (originalContent) {
+            chatItem.innerHTML = originalContent;
+        } else {
+            // If we don't have the original content, rebuild it
+            chatItem.innerHTML = '';
+            
+            // Create text element
+            const chatText = document.createElement('div');
+            chatText.className = 'chat-item-text';
+            chatText.textContent = chatItem.dataset.title || 'Untitled Chat';
+            chatItem.appendChild(chatText);
+            
+            // Create actions container
+            const actionsContainer = document.createElement('div');
+            actionsContainer.className = 'chat-item-actions';
+            
+            // Create delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'chat-item-action-btn';
+            deleteBtn.innerHTML = '<i class="glyphicon glyphicon-trash"></i>';
+            deleteBtn.title = 'Delete chat';
+            deleteBtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                showDeleteConfirmation(chatItem.dataset.id, chatItem.dataset.title);
+            };
+            actionsContainer.appendChild(deleteBtn);
+            
+            chatItem.appendChild(actionsContainer);
+        }
+        
+        // Clear editing state
+        editingChatId = null;
+    }
+    
+    // Enable editing the title in the header
+    function enableTitleEdit() {
+        const titleElement = document.getElementById('chat-title');
+        const editContainer = document.getElementById('title-edit-container');
+        const titleInput = document.getElementById('title-edit-input');
+        
+        // Hide title, show edit input
+        titleElement.style.display = 'none';
+        editContainer.style.display = 'block';
+        
+        // Set initial value and focus
+        titleInput.value = titleElement.textContent;
+        titleInput.focus();
+        titleInput.select();
+        
+        // Add event listeners for save/cancel buttons
+        document.getElementById('save-title-btn').onclick = saveTitleEdit;
+        document.getElementById('cancel-title-btn').onclick = cancelTitleEdit;
+        
+        // Add keyboard handlers
+        titleInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                saveTitleEdit();
+            } else if (e.key === 'Escape') {
+                cancelTitleEdit();
+            }
+        });
+    }
+    
+    // Save the title edit from the header
+    function saveTitleEdit() {
+        const titleElement = document.getElementById('chat-title');
+        const editContainer = document.getElementById('title-edit-container');
+        const titleInput = document.getElementById('title-edit-input');
+        
+        const newTitle = titleInput.value.trim() || 'Untitled Chat';
+        
+        // Update UI
+        titleElement.textContent = newTitle;
+        titleElement.style.display = 'block';
+        editContainer.style.display = 'none';
+        document.title = newTitle + ' - Ollama Chat';
+        
+        // Update the chat item in sidebar
+        const chatItem = document.querySelector(`.chat-item[data-id="${currentChatId}"]`);
+        if (chatItem) {
+            const textElement = chatItem.querySelector('.chat-item-text');
+            if (textElement) {
+                textElement.textContent = newTitle;
+            }
+            chatItem.dataset.title = newTitle;
+        }
+        
+        // Send update to server
+        fetch(`/ollama/chat/${currentChatId}/title`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ title: newTitle })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to update chat title');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Chat title updated successfully');
+        })
+        .catch(error => {
+            console.error('Error updating chat title:', error);
+        });
+    }
+    
+    // Cancel the title edit from the header
+    function cancelTitleEdit() {
+        const titleElement = document.getElementById('chat-title');
+        const editContainer = document.getElementById('title-edit-container');
+        
+        titleElement.style.display = 'block';
+        editContainer.style.display = 'none';
+    }
+
+    // Load chat details
+    function loadChatDetails() {
+        // Clear existing messages
+        const chatMessages = document.getElementById('chat-messages');
+        chatMessages.innerHTML = '<div class="loading-history">Loading conversation...</div>';
+        
+        // Fetch the chat details
+        fetch(`/ollama/chat/${currentChatId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to load chat');
+                }
+                return response.json();
+            })
+            .then(data => {
+                chatMessages.innerHTML = '';
+                
+                // Update chat title
+                if (data.title) {
+                    document.getElementById('chat-title').textContent = data.title;
+                    document.title = data.title + ' - Ollama Chat';
+                }
+                
+                // Display all messages in the chat
+                if (data.details && data.details.length > 0) {
+                    data.details.forEach(message => {
+                        if (message.type_option === "Input") {
+                            appendMessage('user', message.text);
+                        } else if (message.type_option === "Output") {
+                            let formattedMessage = formatResponse(message.text);
+                            appendFormattedMessage('assistant', formattedMessage);
+                        }
+                    });
+                } else {
+                    appendMessage('assistant', 'No messages found in this conversation.');
+                }
+                
+                scrollToBottom();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                chatMessages.innerHTML = '<div class="message assistant-message"><div class="message-content"><p>Failed to load conversation. Please try again later.</p></div></div>';
+            });
+    }
+
+    // Initialize the page
+    window.addEventListener('load', function() {
+        loadChatHistory();
+        loadChatDetails();
+        
+        // Setup textarea auto-resize
+        const textarea = document.getElementById('chatInput');
+        autoResizeTextarea(textarea);
+        
+        // Enable/disable send button based on input
+        textarea.addEventListener('input', function() {
+            document.getElementById('sendButton').disabled = this.value.trim() === '';
+            autoResizeTextarea(this);
+        });
+        
+        // Handle preset selection change
+        document.getElementById('presetSelector').addEventListener('change', function() {
+            selectedPresetId = this.value;
+        });
+        
+        // Handle send button click
+        document.getElementById('sendButton').addEventListener('click', sendMessage);
+        
+        // Handle Enter key (with Shift+Enter support for new lines)
+        document.getElementById('chatInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                    // Allow new line with Shift+Enter
+                    return;
+                } else {
+                    e.preventDefault();
+                    if (this.value.trim() !== '') {
+                        sendMessage();
+                    }
+                }
+            }
+            
+            // Auto-resize textarea
+            setTimeout(() => {
+                autoResizeTextarea(this);
+            }, 0);
+        });
+    });
+
+    // Function to send a message
+    function sendMessage() {
+        const input = document.getElementById('chatInput');
+        const message = input.value.trim();
+        
+        if (message === '') return;
+        
+        // Display user message
+        appendMessage('user', message);
+        
+        // Clear input and disable send button
+        input.value = '';
+        document.getElementById('sendButton').disabled = true;
+        
+        // Reset textarea height
+        input.style.height = 'auto';
+
+        // Show loading indicator
+        const loadingId = showLoading();
+        
+        // Get the selected preset ID
+        const presetId = selectedPresetId || document.getElementById('presetSelector').value;
+        
+        // Prepare request
+        const endpoint = `/ollama/post/${currentChatId}/`;
+        const requestBody = { 
+            prompt_input: message,
+            preset_id: presetId
+        };
+        
+        // Send request to API
+        fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Remove loading indicator
+            removeLoading(loadingId);
+            
+            // Display formatted response
+            if (data.results && data.results[0] && data.results[0].message) {
+                let responseText = data.results[0].message;
+                let formattedMessage = formatResponse(responseText);
+                appendFormattedMessage('assistant', formattedMessage);
+            } else {
+                appendMessage('assistant', 'Sorry, I encountered an error processing your request.');
+            }
+            
+            // Scroll to the bottom
+            scrollToBottom();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            removeLoading(loadingId);
+            appendMessage('assistant', 'Sorry, there was an error communicating with the server.');
+            scrollToBottom();
+        });
+    }
+
+    // Function to auto-resize the textarea based on content
+    function autoResizeTextarea(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = (textarea.scrollHeight) + 'px';
+    }
+    
+    // Function to format the response with markdown-like styling
+    function formatResponse(text) {
+        // Replace thinking tags with styled section
+        let formattedText = text.replace(/<think>(.*?)<\/think>/s, 
+            '<div class="thinking-process"><h4>🧠 Thinking process:</h4><p>$1</p></div>');
+            
+        // Format code blocks with copy button
+        formattedText = formattedText.replace(/```([a-z]*)\n([\s\S]*?)```/g, function(match, language, code) {
+            // Preserve indentation by replacing spaces with non-breaking spaces
+            const preservedCode = code.replace(/^ {4}/gm, '    ');
+            
+            return `<div class="code-block">
+                <div class="code-header">
+                    <span class="code-language">${language || 'code'}</span>
+                    <button class="copy-button" onclick="copyCode(this)">
+                        <span class="copy-text">Copy</span>
+                    </button>
+                </div>
+                <pre><code class="language-${language || 'text'}">${preservedCode}</code></pre>
+            </div>`;
+        });
+            
+        // Format inline code
+        formattedText = formattedText.replace(/`([^`]+)`/g, '<code>$1</code>');
+        
+        // Format headers
+        formattedText = formattedText.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+        formattedText = formattedText.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+        formattedText = formattedText.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+        
+        // Format lists with proper structure
+        const listItemRegex = /^\d+\. (.*?)$|^- (.*?)$/gm;
+        let listMatches = [...formattedText.matchAll(listItemRegex)];
+        
+        if (listMatches.length > 0) {
+            // Check if we have ordered or unordered lists
+            const hasOrderedList = listMatches.some(match => match[1]);
+            const hasUnorderedList = listMatches.some(match => match[2]);
+            
+            // Replace ordered list items
+            if (hasOrderedList) {
+                formattedText = formattedText.replace(/^\d+\. (.*?)$/gm, '<li>$1</li>');
+                // Wrap with ol tags if there are consecutive list items
+                formattedText = formattedText.replace(/(<li>.*?<\/li>\s*){2,}/g, '<ol>$&</ol>');
+            }
+            
+            // Replace unordered list items
+            if (hasUnorderedList) {
+                formattedText = formattedText.replace(/^- (.*?)$/gm, '<li>$1</li>');
+                // Wrap with ul tags if there are consecutive list items
+                formattedText = formattedText.replace(/(<li>.*?<\/li>\s*){2,}/g, '<ul>$&</ul>');
+            }
+        }
+        
+        // Format bold text
+        formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        
+        // Format italic text
+        formattedText = formattedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        
+        // Add paragraph breaks
+        formattedText = formattedText.replace(/\n\s*\n/g, '</p><p>');
+        
+        // Wrap in paragraph tags if not already
+        if (!formattedText.startsWith('<')) {
+            formattedText = '<p>' + formattedText + '</p>';
+        }
+        
+        return formattedText;
+    }
+
+    // Function to copy code to clipboard
+    function copyCode(button) {
+        const codeBlock = button.closest('.code-block').querySelector('code');
+        const textToCopy = codeBlock.textContent;
+        
+        navigator.clipboard.writeText(textToCopy)
+            .then(() => {
+                const copyText = button.querySelector('.copy-text');
+                copyText.textContent = 'Copied!';
+                
+                setTimeout(() => {
+                    copyText.textContent = 'Copy';
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Could not copy text: ', err);
+            });
+    }
+    
+    // Function to append a message to the chat
+    function appendMessage(sender, content) {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}-message`;
+        
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+        
+        const paragraph = document.createElement('p');
+        // Instead of setting textContent which strips formatting,
+        // use innerText which preserves line breaks but escapes HTML
+        paragraph.innerText = content;
+        
+        messageContent.appendChild(paragraph);
+        messageDiv.appendChild(messageContent);
+        chatMessages.appendChild(messageDiv);
+        
+        scrollToBottom();
+    }
+    
+    // Function to append a formatted message to the chat
+    function appendFormattedMessage(sender, content) {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}-message`;
+        
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+        messageContent.innerHTML = content;
+        
+        messageDiv.appendChild(messageContent);
+        chatMessages.appendChild(messageDiv);
+        
+        scrollToBottom();
+    }
+    
+    // Function to show loading indicator
+    function showLoading() {
+        const chatMessages = document.getElementById('chat-messages');
+        const loadingDiv = document.createElement('div');
+        const id = 'loading-' + Date.now();
+        loadingDiv.id = id;
+        loadingDiv.className = 'message assistant-message';
+        
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+        
+        const paragraph = document.createElement('p');
+        paragraph.className = 'loading-dots';
+        paragraph.textContent = 'Ollama is thinking';
+        
+        messageContent.appendChild(paragraph);
+        loadingDiv.appendChild(messageContent);
+        chatMessages.appendChild(loadingDiv);
+        
+        scrollToBottom();
+        return id;
+    }
+    
+    // Function to remove loading indicator
+    function removeLoading(id) {
+        const loadingElement = document.getElementById(id);
+        if (loadingElement) {
+            loadingElement.remove();
+        }
+    }
+    
+    // Function to scroll to the bottom of the chat
+    function scrollToBottom() {
+        const chatMessages = document.getElementById('chat-messages');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+</script>
+{% endblock %}
